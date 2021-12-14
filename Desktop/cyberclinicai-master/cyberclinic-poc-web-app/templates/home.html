@@ -1,0 +1,597 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We" crossorigin="anonymous">
+    <title> Cyberclinic Recommendation System </title>
+    <link rel="icon" href="https://cyberclinic.com.au/landing_assets/img/fav.png" type="image/gif" sizes="16x16">
+    <style>
+        .mybutton {
+            box-shadow: 5px 5px 5px #888888;
+        }
+    </style>
+</head>
+
+<body class="d-flex flex-column min-vh-100" onload="setSession();">
+    <!-- This is the script which will run on load of the page to set the session-->
+    <script>
+        function setSession()
+        {   
+            if (sessionStorage.getItem("contextData") === null)
+            {
+                sessionStorage.setItem("contextData", "");
+                console.log("Session Established");
+            }
+        }
+    </script>
+    <main class="flex-fill">
+        <div style="border-radius: 10px" class="mx-5 px-5 py-1">
+            <h1 style="text-align:center;color:#182258 !important" class="my-2 pt-2"> <img
+                    src='https://cyberclinic.com.au/landing_assets/img/logo/logo.svg' alt="Cyberclinic"> 
+                    <b> Recommendation Model </b> 
+            </h1>
+        </div>
+        <div class="mx-3 mt-4 pt-1">
+            <form enctype="multipart/form-data" id='user_input' name='user_input'>
+                {% csrf_token %}
+                <textarea name="input_data" id="input_data" rows=10
+                    style="width:100%; border-radius: 25px; box-shadow: 5px 5px 5px #888888;"
+                    class="px-2 py-1"></textarea>
+            </form>
+            <p id='instructions' class="text-center">You can click on the microphone icon to use your microphone</p>
+        </div>
+        <div class="mx-2 text-center">
+            <button class='btn btn-warning btn-sm mybutton' onclick='resetSession();' type="button"> Start New Session</button>
+            <img src="{% static 'img/mic.gif' %}" alt="microphone" id="mic_input">
+            <button type="button" onclick="get_recom();" class="btn btn-primary btn-sm mx-1 mybutton" style="text-align:center">
+                Get Recommendation</button>
+            <button class='btn btn-danger btn-sm mybutton' onclick='resetInput();' type="button"> Reset</button>
+        </div>
+        <form id="output" class="mx-4 my-4 px-2 text-center"></form>
+    </main>
+    <footer class="footer mt-auto py-3" style="background-color:#182258">
+        <div class="container text-center">
+            <span class="text-center" style="color:#fff;"> Designed and Developed By Apisero </span>
+        </div>
+    </footer>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-U1DAWAznBHeqEIlVSCgzq+c9gqGAJn5c/t99JyeKa9xxaYpSvHU5awsuZVVFIhvj" crossorigin="anonymous">
+    </script>
+    <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js"
+        integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous">
+    </script>
+    <!-- It is being used to reset the input and output data only, will not remove the session data-->
+    <script>
+        function resetInput() {
+            r = confirm("Please Confirm If You Want To Reset?");
+            if (r == true) {
+                document.getElementById('input_data').value = '';
+                document.getElementById('output').innerHTML = '';
+            }
+        }
+    </script>
+    <!-- To reset the session-->
+    <script>
+        function resetSession()
+        {
+            let confirm_res = confirm("Are you sure you want to start a new session ?")
+            if(confirm_res == true)
+            {
+                sessionStorage.setItem("contextData","");
+                resetInput();
+                alert("Session Cleared");
+            }
+        }
+    </script>
+    <script>
+        var retrain_data = {
+            "name":"",
+            "value":"null",
+            "answer":"",
+            "classLabel":"",
+        };
+        var response_result;
+        var state = 0;
+        var SpeechRecognition = window.webkitSpeechRecognition;
+        var recognition = new SpeechRecognition();
+        var Textbox = $('#input_data');
+        var instructions = document.getElementById('instructions')
+        var Content = '';
+        recognition.continuous = true;
+        recognition.onresult = function (event) {
+            var current = event.resultIndex;
+            var transcript = event.results[current][0].transcript;
+            Content += transcript;
+            Textbox.val(Content);
+        };
+        recognition.onstart = function () {
+            instructions.innerHTML = 'Voice recognition is On. It will be stopped if there is no activity';
+            var mic = document.getElementById('mic_input')
+            mic.src = "{% static 'img/mic-animate.gif'%}";
+            state = 1;
+        }
+        recognition.onspeechend = function () {
+            instructions.innerHTML = 'You can click on the microphone icon to use your microphone'
+        }
+        recognition.onerror = function (event) {
+            if (event.error == 'no-speech') {
+                instructions.text('Try again.');
+            }
+        }
+        $('#mic_input').on('click', function (e) {
+            if (state == 0) {
+                if (Content.length) {
+                    Content += ' ';
+                }
+                recognition.start();
+            } else {
+                recognition.stop();
+                state = 0;
+                var mic = document.getElementById('mic_input')
+                mic.src = "{% static 'img/mic.gif'%}";
+
+            }
+        });
+        Textbox.on('input', function () {
+            Content = $(this).val();
+        })
+        var page_state={};
+        // This function is being used to implement pagination in the response
+        function change_page(metricPg)
+        {
+            let my_metric = metricPg.split('-')[0];
+            let target_page = metricPg.split('-')[1];
+            let start_trim = (target_page-1)*5;
+            let questions_list = page_state[my_metric]['questions'].slice(start_trim,start_trim+5);
+            document.getElementById(`ul-question-${my_metric}`).innerHTML = '';
+            for (var j of questions_list) 
+            {
+                            var listHtml = `
+                    <li class="list-group-item d-flex justify-content-between align-items-center" id='${my_metric}-question-${j['index']}'>
+                            <span id='${my_metric}-answer-${j["index"]}'>${j['Practitioner']}</span>
+                            <span class="badge rounded-pill">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="radio" id="parent-${my_metric}-${j['index']}" name="parent-${my_metric}" onclick="labelOthers(this.id);">
+                                 </div>
+                            </span>
+                    </li>
+                    `
+                     document.getElementById(`ul-question-${my_metric}`).innerHTML += listHtml;
+            }
+            let get_ul = document.getElementById(`ul-question-${my_metric}`);
+            console.log(get_ul);
+            for (j of get_ul.children) 
+            {
+                if(j.id.includes(retrain_data['value']))
+                {
+                    document.getElementById(`parent-${my_metric}-${retrain_data['value']}`).checked = true;
+                    document.getElementById(`${my_metric}-question-${retrain_data['value']}`).style.backgroundColor = '#70c6cf';
+                }
+                            
+            }
+            document.getElementById(`${my_metric}-${page_state[my_metric]['state']}`).className="page-item";
+            document.getElementById(`${my_metric}-${target_page}`).className = "page-item active"
+            page_state[my_metric]['state'] = target_page;
+            console.log(page_state[my_metric])
+
+        }
+        // This is the function that is basically handling the AJAX call to fetch response from API
+        function get_recom() {
+            if (document.getElementById('input_data').value.length > 0) {
+                if (state == 1) {
+                    recognition.stop();
+                    state = 0;
+                    document.getElementById('mic_input').src = "{% static 'img/mic.gif' %}";
+                }
+                url = '/api/mlmodel/version-1';
+                temp_input = document.forms['user_input']['input_data'].value;
+                // console.log("current_data",temp_input)
+                input = sessionStorage.getItem("contextData");
+                // console.log("Previous Data",input);
+                input = input + "  " + temp_input;
+                // console.log("Context Data",input);
+                sessionStorage.setItem("contextData",input);
+                // console.log("Data Appended");
+                data = JSON.stringify({
+                    'input': input
+                });
+                params = {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'Application/json'
+                    },
+                    body: data
+                }
+                fetch(url, params).then((response) => {
+                    return response.json();
+                }).then((data) => {
+                    var result = JSON.parse(data);
+                    response_result = result;
+                    var outputarea = document.getElementById("output");
+                    var sentiment_highlighter;
+                    if (result['Sentiment'] == 'Positive')
+                    {
+                        sentiment_highlighter = 'success';
+                    }
+                    else if (result['Sentiment']=='Negative')
+                    {
+                        sentiment_highlighter = 'danger';
+                    }
+                    else
+                    {
+                        sentiment_highlighter = 'secondary';
+                    }
+                    outputarea.innerHTML = `
+                <div class="text-center my-2" style='color:#182258 !important;'> 
+                    <div id="sentiment" class="my-5 text-center">
+                        <h3> Sentiment </h3>
+                        <div class="alert alert-${sentiment_highlighter}" role="alert">
+                            <strong> ${result['Sentiment']} </strong>
+                        </div>
+                        <table class="table table-bordered my-3">
+                                <tr class="table-primary">
+                                    <th> Happy </th>
+                                    <th> Angry </th>
+                                    <th> Surprise </th>
+                                    <th> Sad </th>
+                                    <th> Fear </th>
+                                </tr>
+                                <tr>
+                                    <td> ${result['Happy']} </td>
+                                    <td> ${result['Angry']} </td>
+                                    <td> ${result['Surprise']} </td>
+                                    <td> ${result['Sad']} </td>
+                                    <td> ${result['Fear']} </td>
+                                </tr>
+                        </table>
+                    </div>
+                    <h3> Generated Recommendations </h3>
+                    <div>You can send your feedback or add your custom recommendation, It will help to train the model</div> 
+                </div>                
+                <div class="accordion" id="accordionPanelsStayOpenExample"></div>
+                `
+                    for (var i of result['Recommendations']) {
+                        var counter_index=0;
+                        var html = `
+                        <div class="accordion-item">
+                                <h2 class="accordion-header" id="panelsStayOpen-headingOne" id="${i['metric']}-heading" style="background-color:#ffc107 !important">
+                                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#${i['metric']}-collapse" aria-expanded="true" aria-controls="${i['metric']}-collapse">
+                                       <b> ${i['metric']} </b>
+                                    </button>
+                                </h2>
+                                <div id="${i['metric']}-collapse" class="accordion-collapse collapse show" aria-labelledby="${i['metric']}-heading">
+                                        <div class="accordion-body text-center" id="main-metric-${i['metric']}">
+                                            <ul class="list-group" id="ul-question-${i['metric']}">
+                                            </ul>
+                                            <div class="d-flex justify-content-center my-1" id="pagination-head-${i['metric']}">
+                                                <ul class="pagination pagination-sm" id="pagination-ul-head-${i['metric']}">
+                                                </ul>
+                                                </div>
+                                        </div>
+                                </div>
+                            </div>
+                        `
+                        page_state[i['metric']]={
+                            'questions':i['questions'],
+                            'state':1
+                        }
+                        
+                        document.getElementById('accordionPanelsStayOpenExample').innerHTML += html;
+                        for (var j of i['questions']) {
+                            if(counter_index>4)
+                            {
+                                break;
+                            }
+                            var listHtml = `
+                    <li class="list-group-item d-flex justify-content-between align-items-center" id='${i['metric']}-question-${j['index']}'>
+                            <span id='${i["metric"]}-answer-${j["index"]}'>${j['Practitioner']}</span>
+                            <span class="badge rounded-pill">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="radio" id="parent-${i['metric']}-${j['index']}" name="parent-${i['metric']}" onclick="labelOthers(this.id);">
+                                 </div>
+                            </span>
+                    </li>
+                    `
+                            document.getElementById(`ul-question-${i['metric']}`).innerHTML += listHtml;
+                            counter_index +=1;
+                        }
+                    }
+                    var customHtml = `
+                <div class="accordion-item">
+                                <h2 class="accordion-header" id="panelsStayOpen-headingOne" id="custom-heading" style="background-color:#ffc107 !important">
+                                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#custom-collapse" aria-expanded="true" aria-controls="custom-collapse">
+                                        Add My Custom Recommendation
+                                    </button>
+                                </h2>
+                                <div id="custom-collapse" class="accordion-collapse collapse show" aria-labelledby="custom-heading">
+                                        <div class="accordion-body text-center">
+                                            <ul class="list-group" id="ul-question-custom">
+                                                <li class="list-group-item d-flex justify-content-between align-items-center" id='question-custom'>
+                                                    <img src="{% static 'img/mic.gif' %}" alt="microphone" id="mic_input1" onclick="user_voice_input();">
+                                                    <textarea id="custom_input" rows=4 style="width:100%; box-shadow: 5px 5px 5px #888888;" class="px-2 py-1"></textarea>
+                                                    <span class="badge rounded-pill">
+                                                    <div>
+                                                        <button class="btn btn-info btn-sm" id="custom-input-value" onclick="makeRetrain(this.id)" type="button"> Add </button>
+                                                    </div>
+                            </span>
+                                                </li>
+                                            </ul>
+                                            <p id="instructions1">Click on the microphone to start speaking</p>
+                                        </div>
+                                </div>
+                            </div>
+                       `
+                    document.getElementById('accordionPanelsStayOpenExample').innerHTML += customHtml;
+                    var feedback = `<div id='feedback' class='text-center my-2'>
+                                <div id="feedback_message"></div>
+                                <button class='btn btn-primary' style="border-radius:25px;box-shadow: 10px 10px 10px #888888;" onclick="submitFeedback();" type="button"> Submit Feedback </button>
+                            </div>`
+                    document.getElementById('output').innerHTML += feedback;
+                    for(i=0; i<response_result['Recommendations'].length;i++)
+                    {
+                    
+                        let page_len = Math.ceil(response_result['Recommendations'][i]['questions'].length/5);
+                        for(j=0;j<page_len;j++)
+                        {   
+                            let active;
+                            let disabled;
+                            if(j==0)
+                            {
+                                active = "active";
+                                disabled = "disabled"
+                            }
+                            else
+                            {
+                                active = '';
+                                disabled = "";
+                            }
+
+                            let page_no_html = `<li class="page-item ${active}" aria-current="page" id="${response_result['Recommendations'][i]['metric']}-${j+1}" onclick="change_page(this.id)">
+                                <span class="page-link">
+                                    ${j+1}
+                                </span>
+                                </li>`
+                            document.getElementById(`pagination-ul-head-${response_result['Recommendations'][i]['metric']}`).innerHTML += page_no_html
+                            // if(disabled)
+                            // {
+                            //     console.log(disabled);
+                            //     $(`#pagination-ul-head-${response_result['Recommendations'][i]['metric']}`).off('click');
+                            // }
+                        }
+                        
+                    }
+
+                })
+            } else {
+                alert("please provide some input")
+            }
+        }
+        // This is the function that is basically setting the json objet which is containg the option which has been selected by practitioner as feedback
+        function makeRetrain(id) 
+        {   
+            if (id == "custom-input-value") 
+            {
+                if(document.getElementById('custom_input').value.length > 0)
+                {   
+                    let recommendation = response_result['Recommendations']
+                    for(i=0;i<recommendation.length;i++)
+                    {
+                        let get_ul_id = `ul-question-${recommendation[i]['metric']}`;
+                        let get_ul = document.getElementById(get_ul_id); 
+                        for (j of get_ul.children) 
+                        {   
+                            let id = j.id.split('-')
+                            document.getElementById(`parent-${recommendation[i]['metric']}-${id[2]}`).checked = false;
+                            document.getElementById(`${recommendation[i]['metric']}-question-${id[2]}`).style.backgroundColor = '#fff';
+                             
+                        }
+                    }
+                    var added_recom = `
+                            <li class="list-group-item d-flex justify-content-between align-items-center" id='question-custom-set' style="background-color:#70c6cf;">${document.getElementById('custom_input').value}</li>
+                            `
+                    
+                    if (document.getElementById('question-custom-set')) {
+                        document.getElementById('question-custom-set').innerHTML = document.getElementById('custom_input')
+                            .value;
+                    } else {
+                        document.getElementById('ul-question-custom').innerHTML += added_recom;
+                    }
+                    retrain_data = {
+                        "name": "custom",
+                        "value": "",
+                        "answer":document.getElementById('question-custom-set').innerHTML
+                    }
+                    for(i=0;i<recommendation.length;i++)
+                    {   
+                        let custom_flag = 0;
+                        let get_ul_id = `ul-question-${recommendation[i]['metric']}`;
+                        let get_ul = document.getElementById(get_ul_id); 
+                        for (j of get_ul.children) 
+                        {   
+                            let id = j.id.split('-')
+                            if(document.getElementById(`${id[0]}-answer-${id[2]}`).innerText==document.getElementById('question-custom-set').innerHTML)
+                            {
+                                retrain_data['name']=id[0];
+                                retrain_data['value']=id[2];
+                                custom_flag = 1;
+                                break;
+                            }
+                             
+                        }
+                        if(custom_flag==1)
+                        {
+                            break;
+                        }
+                    }
+                    
+                }
+                else
+                {
+                    alert("Please add your recommendation");
+                }
+                
+            } 
+            else 
+            {
+                console.log()
+                retrain_data = {
+                    "name": id.split("-")[1],
+                    "value": id.split("-")[2],
+                    "answer":document.getElementById(`${id.split("-")[1]}-answer-${id.split("-")[2]}`).innerText
+                }
+            }
+        }
+        // Once we have set the feedack object , this function will be triggered when we will press the send feedack button
+        function submitFeedback() {
+            if (retrain_data['name'].length>0 && retrain_data['answer'].length>0) 
+            {   
+                retrain_data['classLabel'] = response_result['prediction_class'];
+                var url = '/retrain';
+                var params = {
+                    "method": "POST",
+                    "header": {
+                        "Content-type": "Application/json"
+                    },
+                    "body": JSON.stringify(retrain_data)
+
+                };
+                fetch(url, params).then((response) => {
+                    return response.json();
+                }).then((data) => {
+                    let messageHtml = `
+                    <div class="alert alert-success alert-dismissible fade show my-3" role="alert">
+                        <strong>Received Your feedback. Thank You!</strong>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    `
+                    document.getElementById("feedback_message").innerHTML += messageHtml;
+                })
+            } else {
+                alert("Can't submit feedback without selecting any one")
+            }
+
+        }
+
+        function markuncheck(ids)
+        {   
+            retrain_data['name']="";
+            retrain_data['value']="";
+            retrain_data['answer']="";
+            let recommendation = response_result['Recommendations'];
+            for(i=0;i<recommendation.length;i++)
+            {
+                let get_ul_id = `ul-question-${recommendation[i]['metric']}`;
+                let get_ul = document.getElementById(get_ul_id); 
+                for (j of get_ul.children) 
+                {   
+                    if (j.id.includes(ids[2])) 
+                    {
+                        document.getElementById(`parent-${recommendation[i]['metric']}-${ids[2]}`).checked = false;
+                        document.getElementById(`${recommendation[i]['metric']}-question-${ids[2]}`).style.backgroundColor = '#fff';
+                    } 
+                }
+            }
+        }
+
+
+        function labelOthers(id) 
+        {   
+
+            if(retrain_data['value']==id.split('-')[2])
+            {
+                console.log("I am called 2");
+                markuncheck(id.split('-'));
+            }
+            else
+            {
+                console.log("I am called1");
+                if(document.getElementById('question-custom-set')) 
+                {
+                    document.getElementById('question-custom-set').remove();
+                }
+                document.getElementById('custom_input').value = '';
+                makeRetrain(id);
+                let recommendation = response_result['Recommendations'];
+                let ids = id.split("-");
+                let uls = document.getElementById(`ul-question-${ids[1]}`)
+                for (i of uls.children) {
+                    if (i.id != `${ids[1]}-question-${ids[2]}`) {
+                        i.style.backgroundColor = "#fff";
+                    } else {
+                        document.getElementById(`${ids[1]}-question-${ids[2]}`).style.backgroundColor = '#70c6cf';
+                    }
+                }
+                for (i = 0; i < recommendation.length; i++) {
+                    if (recommendation[i]['metric'] != `${ids[1]}`) {
+                        let get_ul_id = `ul-question-${recommendation[i]['metric']}`;
+                        let get_ul = document.getElementById(get_ul_id);
+                        for (j of get_ul.children) {
+                            if (j.id.includes(ids[2])) {
+                                document.getElementById(`parent-${recommendation[i]['metric']}-${ids[2]}`).checked = true;
+                                document.getElementById(`${recommendation[i]['metric']}-question-${ids[2]}`).style
+                                    .backgroundColor = '#70c6cf';
+                            } else {
+                                j.style.backgroundColor = '#fff';
+                                document.getElementById(`parent-${recommendation[i]['metric']}-${j.id.split('-')[2]}`)
+                                    .checked = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- This is the script to handle the web sppech technique at practitioner feedback taking end-->
+    <script>
+        var state1 = 0;
+        var SpeechRecognition1 = window.webkitSpeechRecognition;
+        var recognition1 = new SpeechRecognition();
+        var Content1 = '';
+        function user_voice_input() {
+            var Textbox1 = $('#custom_input');
+            var instructions1 = document.getElementById('instructions1')
+            recognition1.continuous = true;
+            recognition1.onresult = function (event) {
+                var current = event.resultIndex;
+                var transcript = event.results[current][0].transcript;
+                Content1 += transcript;
+                Textbox1.val(Content1);
+            };
+            recognition1.onstart = function () {
+                instructions1.innerHTML = 'Voice recognition is On. It will be stopped if there is no activity';
+                var mic = document.getElementById('mic_input1')
+                mic.src = "{% static 'img/mic-animate.gif'%}";
+                state1 = 1;
+            }
+            recognition1.onspeechend = function () {
+                instructions1.innerHTML = 'You can click on the microphone icon to use your microphone'
+            }
+            recognition.onerror = function (event) {
+                if (event.error == 'no-speech') {
+                    instructions1.text('Try again.');
+                }
+            }
+            if (state1 == 0) {
+                if (Content.length) {
+                    Content1 += ' ';
+                }
+                recognition1.start();
+            } else {
+                recognition1.stop();
+                state1 = 0;
+                var mic = document.getElementById('mic_input1')
+                mic.src = "{% static 'img/mic.gif'%}";
+
+            }
+            Textbox1.on('input', function () {
+                Content1 = $(this).val();
+            })
+        }
+    </script>
+</body>
+</html>
